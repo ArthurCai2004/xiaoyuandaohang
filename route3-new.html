@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <title>五十个点位展示</title>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak=wE7L9NflFWyPXutp6zeW1gw1o2BRTdxX"></script>
+    <style type="text/css">
+        body, html, #container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+            font-family: "微软雅黑", Arial, sans-serif;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 999;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        label, select, button {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        select {
+            width: 200px;
+            padding: 5px;
+        }
+        button {
+            padding: 5px 10px;
+            cursor: pointer;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #cancelButton{
+            background-color: red;
+        }    
+        #cancelButton:hover{
+            background-color: #d32f2f;
+        }
+        #result, #currentLocation {
+            margin-top: 10px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+
+    <div id="controls">
+        <label for="singlePoint">选择点位：</label>
+        <select id="singlePoint"></select><br>
+
+        <button onclick="displaySinglePoint()">查询单个点位</button>
+        <div id="result">位置：--</div><br>
+
+        <label for="startPoint">选择起点：</label>
+        <select id="startPoint"></select><br>
+
+        <label for="endPoint">选择终点：</label>
+        <select id="endPoint"></select><br>
+
+        <label for="mode">选择模式：</label>
+        <select id="mode">
+            <option value="driving">驾车</option>
+            <option value="walking">步行</option>
+            <option value="riding">骑行</option>
+        </select><br>
+
+        <button onclick="calculateRoute()">计算路径</button>
+        <button id="cancelButton" onclick="cancelRoute()">取消</button>
+        <div id="resultRoute">时间估计：--</div><br>
+
+        <button onclick="trackCurrentLocation()">实时更新当前位置</button>
+        <button onclick="stopTracking()">停止更新</button>
+        <div id="currentLocation">当前位置：--</div>
+    </div>
+
+    <script type="text/javascript">
+        var map = new BMap.Map("container");
+        map.enableScrollWheelZoom(true);
+
+        var driving, walking, riding;
+        var markers = [];
+        var singleMarker;
+        var currentLocationMarker;
+        var watchId;
+
+        var campusPoints = [
+            {"name": "上海市宝山区大场镇新世纪大学生村", "coords": {"lat": 31.31888245372559, "lng": 121.39369448338118}},
+            {"name": "上海市宝山区大场镇上大路798号上大南区", "coords": {"lat": 31.316794405905963, "lng": 121.39549605271309}},
+            {"name": "上海市宝山区大场镇上大南区", "coords": {"lat": 31.314246589874028, "lng": 121.39564609569504}},
+            // 继续添加其余的点位...
+        ];
+
+        function calculateBounds() {
+            var bounds = new BMap.Bounds();
+            campusPoints.forEach(function(point) {
+                var pt = new BMap.Point(point.coords.lng, point.coords.lat);
+                bounds.extend(pt);
+            });
+            return bounds;
+        }
+
+        function setMapViewport() {
+            var bounds = calculateBounds();
+            map.setViewport(bounds);
+        }
+
+        function addCampusPoints() {
+            var startSelect = document.getElementById("startPoint");
+            var endSelect = document.getElementById("endPoint");
+            var singleSelect = document.getElementById("singlePoint");
+
+            campusPoints.forEach(function(point, index) {
+                var marker = new BMap.Marker(new BMap.Point(point.coords.lng, point.coords.lat));
+                map.addOverlay(marker);
+                markers.push(marker);
+
+                var optionStart = document.createElement("option");
+                optionStart.text = point.name;
+                optionStart.value = index;
+                startSelect.add(optionStart);
+
+                var optionEnd = document.createElement("option");
+                optionEnd.text = point.name;
+                optionEnd.value = index;
+                endSelect.add(optionEnd);
+
+                var optionSingle = document.createElement("option");
+                optionSingle.text = point.name;
+                optionSingle.value = index;
+                singleSelect.add(optionSingle);
+            });
+        }
+
+        function clearMap() {
+            if (driving) driving.clearResults();
+            if (walking) walking.clearResults();
+            if (riding) riding.clearResults();
+
+            markers.forEach(function(marker) {
+                map.removeOverlay(marker);
+            });
+            if (singleMarker) {
+                map.removeOverlay(singleMarker);
+            }
+            markers = [];
+        }
+
+        function displaySinglePoint() {
+            var singleIndex = document.getElementById("singlePoint").value;
+            var resultDiv = document.getElementById("result");
+            var selectedPoint = campusPoints[singleIndex];
+
+            if (singleMarker) {
+                map.removeOverlay(singleMarker);
+            }
+
+            var icon = new BMap.Icon("https://developers.google.com/maps/documentation/javascript/examples/full/images/beachflag.png", 
+                new BMap.Size(20, 32));
+            singleMarker = new BMap.Marker(new BMap.Point(selectedPoint.coords.lng, selectedPoint.coords.lat), { icon: icon });
+            map.addOverlay(singleMarker);
+            map.centerAndZoom(new BMap.Point(selectedPoint.coords.lng, selectedPoint.coords.lat), 18);
+
+            resultDiv.innerHTML = "位置：" + selectedPoint.name;
+        }
+
+        function calculateRoute() {
+            clearMap();
+
+            var startIndex = document.getElementById("startPoint").value;
+            var endIndex = document.getElementById("endPoint").value;
+            var mode = document.getElementById("mode").value;
+            var resultDivRoute = document.getElementById("resultRoute");
+            resultDivRoute.innerHTML = "时间估计：--";
+
+            var startPoint = new BMap.Point(campusPoints[startIndex].coords.lng, campusPoints[startIndex].coords.lat);
+            var endPoint = new BMap.Point(campusPoints[endIndex].coords.lng, campusPoints[endIndex].coords.lat);
+
+            if (mode === "driving") {
+                driving = new BMap.DrivingRoute(map, {
+                    renderOptions: { map: map, autoViewport: true },
+                    onSearchComplete: function(result) {
+                        if (driving.getStatus() === BMAP_STATUS_SUCCESS) {
+                            var plan = result.getPlan(0);
+                            var duration = plan.getDuration(true);
+                            resultDivRoute.innerHTML = "驾车时间估计：" + duration;
+                        }
+                    }
+                });
+                driving.search(startPoint, endPoint);
+            } else if (mode === "walking") {
+                walking = new BMap.WalkingRoute(map, {
+                    renderOptions: { map: map, autoViewport: true },
+                    onSearchComplete: function(result) {
+                        if (walking.getStatus() === BMAP_STATUS_SUCCESS) {
+                            var plan = result.getPlan(0);
+                            var duration = plan.getDuration(true);
+                            resultDivRoute.innerHTML = "步行时间估计：" + duration;
+                        }
+                    }
+                });
+                walking.search(startPoint, endPoint);
+            } else if (mode === "riding") {
+                riding = new BMap.RidingRoute(map, {
+                    renderOptions: { map: map, autoViewport: true },
+                    onSearchComplete: function(result) {
+                        if (riding.getStatus() === BMAP_STATUS_SUCCESS) {
+                            var plan = result.getPlan(0);
+                            var duration = plan.getDuration(true);
+                            resultDivRoute.innerHTML = "骑行时间估计：" + duration;
+                        }
+                    }
+                });
+                riding.search(startPoint, endPoint);
+            }
+        }
+
+        function cancelRoute(){
+            window.location.reload();
+        }
+
+        function trackCurrentLocation() {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    var currentLocation = new BMap.Point(lng, lat);
+                    map.centerAndZoom(currentLocation, 18);
+
+                    if (currentLocationMarker) {
+                        currentLocationMarker.setPosition(currentLocation);
+                    } else {
+                        currentLocationMarker = new BMap.Marker(currentLocation, {
+                            icon: new BMap.Icon("https://developers.google.com/maps/documentation/javascript/examples/full/images/beachflag.png", 
+                                new BMap.Size(20, 32))
+                        });
+                        map.addOverlay(currentLocationMarker);
+                    }
+
+                    document.getElementById("currentLocation").innerHTML = "当前位置：纬度 " + lat.toFixed(6) + ", 经度 " + lng.toFixed(6);
+                }, function(error) {
+                    alert("无法获取当前位置：" + error.message);
+                });
+            } else {
+                alert("浏览器不支持地理定位功能");
+            }
+        }
+
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                if (currentLocationMarker) {
+                    map.removeOverlay(currentLocationMarker);
+                    currentLocationMarker = null;
+                }
+                document.getElementById("currentLocation").innerHTML = "当前位置：--";
+            }
+        }
+
+        addCampusPoints();
+        setMapViewport();
+    </script>
+</body>
+</html>
